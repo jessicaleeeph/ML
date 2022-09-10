@@ -1,0 +1,91 @@
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(stats)
+
+g = read_excel("/Users/jessiss/Desktop/ML/Titanic/gender_submission.xls")
+tr = read_excel("/Users/jessiss/Desktop/ML/Titanic/train.xls")
+tt = read_excel("/Users/jessiss/Desktop/ML/Titanic/test.xls")
+
+tr_trsf = tr[, -which(names(tr) %in% c("PassengerId","Name", "Sex", "Ticket", "Cabin", "Embarked"))]
+tt_ttsf = tt[, -which(names(tt) %in% c("PassengerId","Name", "Sex", "Ticket", "Cabin", "Embarked"))]
+
+###Sex in training
+#apart sex to transform letter to 1/2
+sex = subset(tr, select = Sex)
+sapply(sex, class)
+sum(is.na(sex$Sex)) #no NAs in this case
+
+#Single characters or strings can be converted into numeric values,
+#only if these conversions are possible -> data lost(missing values or NA)
+#tell R Embarked variable is factor 
+sex = transform(sex, Sex = as.numeric(as.factor(Sex)))
+
+###Embarked in training (repeat sex steps)
+#apart embarked to transform letter to 1, 2, 3
+tr_embarked = subset(tr, select = Embarked)
+sapply(tr_embarked, class) #see what data type Embarked is
+sum(is.na(tr_embarked$Embarked)) #2 NA value
+
+trsf_em = transform(tr_embarked, Embarked = as.numeric(as.factor(Embarked)))
+#Replace NAs to 0 (by using replace function, we need to unlist our list first)
+Embarked = as.numeric(unlist(trsf_em)) %>% replace_na(0)
+
+
+library(caret) #for using dummyVars to transform the categorical data to digital wise
+dmy = dummyVars("~.", data = tr_trsf)
+trsf_d = data.frame(predict(dmy, newdata = tr_trsf)) %>% 
+  fill(Age, .direction = "updown") 
+###Age in training
+#calculate how many na in age column
+sum(is.na(trsf_d$Age)) 
+#drop NA age could affect the sampling, since massive amount of NAs
+
+#Add back SEX/Embarked into post-dummyVars
+trsf_n = cbind(trsf_d, sex, Embarked)
+
+###linear regression
+lm_fit = lm(Survived~., data = trsf_n)
+summary(lm_fit)
+
+
+###Random Forest
+library(randomForest)
+set.seed(100)
+
+###transform testset
+##Age
+sex_tt = subset(tt, select = Sex)
+sapply(sex_tt, class)
+sum(is.na(sex_tt$Sex))
+sex_tt = transform(sex_tt, Sex = as.numeric(as.factor(Sex)))
+
+##Embarked
+tt_embarked = subset(tt, select = Embarked)
+sapply(tt_embarked, class) #see what data type Embarked is
+sum(is.na(tt_embarked$Embarked)) #2 NA value
+ttsf_em = transform(tt_embarked, Embarked = as.numeric(as.factor(Embarked)))
+#Replace NAs to 0 (by using replace function, we need to unlist our list first)
+Embarked_tt = as.numeric(unlist(ttsf_em)) %>% replace_na(0)
+
+#dummyVars transformation
+dmy = dummyVars("~.", data = tt_ttsf)
+ttsf_d = data.frame(predict(dmy, newdata = tt_ttsf)) %>% 
+  #the direction has to be updown in this case bc last 2 do not have values
+  fill(Age, .direction = "updown") %>%
+  fill(Fare, .direction = "updown")
+
+
+sum(is.na(ttsf_d$Age))
+ttsf_n = cbind(ttsf_d, sex_tt, Embarked_tt)
+
+##modelling the training dataset
+class_rm = randomForest(trsf_n[,-1], trsf_n$Survived, ntree = 100)##var explained: 45.06%
+
+#put up an array for survival rate
+ttsf_n %>% mutate(Survived = paste0(0), .before = Pclass)
+
+###XGBOOST
+library(xgboost)
+set.seed(1000)
