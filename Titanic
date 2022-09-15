@@ -1,12 +1,9 @@
-library(tidyverse)
-library(dplyr)
-library(ggplot2)
-library(readxl)
-library(stats)
+x = c("tidyverse", "dplyr", "ggplot2", "readxl", "stats", "ggcorrplot","gbm", "tidyr")
+lapply(x, require, character.only = TRUE)
 
-g = read_excel("/Users/jessiss/Desktop/ML/Titanic/gender_submission.xls")
-tr = read_excel("/Users/jessiss/Desktop/ML/Titanic/train.xls")
-tt = read_excel("/Users/jessiss/Desktop/ML/Titanic/test.xls")
+g = read_excel("C:\\Users\\Jessica\\Desktop\\kaggle\\Titanic\\gender_submission.xlsx")
+tr = read_excel("C:\\Users\\Jessica\\Desktop\\kaggle\\Titanic\\train.xlsx")
+tt = read_excel("C:\\Users\\Jessica\\Desktop\\kaggle\\Titanic\\test.xlsx")
 
 tr_trsf = tr[, -which(names(tr) %in% c("PassengerId","Name", "Sex", "Ticket", "Cabin", "Embarked"))]
 tt_ttsf = tt[, -which(names(tt) %in% c("PassengerId","Name", "Sex", "Ticket", "Cabin", "Embarked"))]
@@ -17,17 +14,46 @@ sex = subset(tr, select = Sex)
 sapply(sex, class)
 sum(is.na(sex$Sex)) #no NAs in this case
 
+
 #Single characters or strings can be converted into numeric values,
 #only if these conversions are possible -> data lost(missing values or NA)
-#tell R Embarked variable is factor 
+#tell R Embarked variable is factor
+##Female:1, Male:2
 sex = transform(sex, Sex = as.numeric(as.factor(Sex)))
+
+###Check if there are duplication of ticket types
+#tr %>% group_by(Ticket, SibSp) %>% filter(n()>1) %>% summarize(n=n())
 
 ###Embarked in training (repeat sex steps)
 #apart embarked to transform letter to 1, 2, 3
-tr_embarked = subset(tr, select = Embarked)
+tr_embarked = subset(tr, select = Embarked) %>%
+  fill(Embarked, .direction = "updown")
 sapply(tr_embarked, class) #see what data type Embarked is
 sum(is.na(tr_embarked$Embarked)) #2 NA value
 
+##visualise embarked
+Survival_e = cbind(tr[,"Survived"], tr_embarked) %>%
+  count(Survived, Embarked)
+
+
+sum_c = sum(Survival_e$n[Survival_e$Embarked == "C"])
+sum_q = sum(Survival_e$n[Survival_e$Embarked == "Q"])
+sum_s = sum(Survival_e$n[Survival_e$Embarked == "S"])
+total_Embarked = rep(rbind(sum_c, sum_q, sum_s), 2)
+Survival_e = cbind(Survival_e, total_Embarked) %>%
+  mutate(percentage = round(n/total_Embarked, 2))
+
+p_e = ggplot(Survival_e, aes(x = factor(Survived), y = percentage, fill = factor(Embarked))) +
+  geom_bar(position="stack", stat="identity") +
+  scale_x_discrete(breaks=c(0,1)) +
+  geom_text(aes(label = percentage), hjust = 0.5, colour = "black", 
+            position = position_stack(vjust = 0.5, reverse = FALSE)) +
+  ggtitle("Survival between Embarked Classes") +
+  xlab("Survival") + ylab("Percentage of people") +
+  facet_wrap(~Embarked)
+
+
+##transform embarked to a numeric variable
 trsf_em = transform(tr_embarked, Embarked = as.numeric(as.factor(Embarked)))
 #Replace NAs to 0 (by using replace function, we need to unlist our list first)
 Embarked = as.numeric(unlist(trsf_em)) %>% replace_na(0)
@@ -39,35 +65,83 @@ trsf_d = data.frame(predict(dmy, newdata = tr_trsf)) %>%
   fill(Age, .direction = "updown") 
 ###Age in training
 #calculate how many na in age column
-sum(is.na(trsf_d$Age)) 
+sum(is.na(trsf_d$Age))
 #drop NA age could affect the sampling, since massive amount of NAs
+
+##visualise age and survival
+p_a = ggplot(trsf_d, aes(factor(Survived), Age)) +
+  geom_point() +
+  geom_smooth(method='lm') +
+  scale_x_discrete(breaks=c(0,1)) +
+  ggtitle("Survival amongst Ages") +
+  xlab("Survival") + ylab("Age")
+
+
+##visualise fare and survival
+p_f = ggplot(trsf_d, aes(factor(Survived), Fare)) +
+  geom_point() +
+  geom_smooth(method='lm') +
+  scale_x_discrete(breaks=c(0,1)) +
+  ggtitle("Survival amongst Fare") +
+  xlab("Survival") + ylab("Fare($)")
+
+
 
 #Add back SEX/Embarked into post-dummyVars
 trsf_n = cbind(trsf_d, sex, Embarked)
 
-###linear regression
-lm_fit = lm(Survived~., data = trsf_n)
-summary(lm_fit)
+
+#Visualise the correlation
+library(ggcorrplot)
+corr = round(cor(trsf_n), 1)
+head(corr[, 1:8])
+
+ggcorrplot(corr, hc.order = FALSE, type = "lower",
+           outline.col = "white",
+           ggtheme = ggplot2::theme_gray,
+           colors = c("#6D9EC1", "white", "#E46726"),
+           lab = TRUE, title = "Correlation", legend.title = "correlation")
 
 
-###Random Forest
-library(randomForest)
-set.seed(100)
+##Visualise survival rate between male and female
+p_sex = subset(trsf_n, select = c(Survived, Sex)) %>%
+  mutate(Gender = case_when(Sex == 2 ~ "Male", Sex == 1 ~ "Female")) %>%
+  count(Survived, Gender)
+
+
+p_g = ggplot(p_sex, aes(x = factor(Survived), y = n, fill = factor(Gender))) +
+  geom_bar(position="stack", stat="identity") +
+  scale_x_discrete(breaks=c(0,1)) +
+  geom_text(aes(label = n), vjust = 2.5, colour = "white", 
+            position = position_stack(vjust = 1, reverse = FALSE)) +
+  ggtitle("Survival between Male and Female") +
+  xlab("Survival") + ylab("Number of people") +
+  facet_wrap(~Gender)
+
+
+##install.packages("ggpubr")
+library(ggpubr)
+ggarrange(
+  p_e, p_g, labels = c("A", "B"),
+  common.legend = FALSE, legend = "bottom"
+)
 
 ###transform testset
-##Age
+##sex
 sex_tt = subset(tt, select = Sex)
 sapply(sex_tt, class)
 sum(is.na(sex_tt$Sex))
 sex_tt = transform(sex_tt, Sex = as.numeric(as.factor(Sex)))
 
+
+
 ##Embarked
-tt_embarked = subset(tt, select = Embarked)
+Embarked_tt = subset(tt, select = Embarked)
 sapply(tt_embarked, class) #see what data type Embarked is
 sum(is.na(tt_embarked$Embarked)) #2 NA value
 ttsf_em = transform(tt_embarked, Embarked = as.numeric(as.factor(Embarked)))
 #Replace NAs to 0 (by using replace function, we need to unlist our list first)
-Embarked_tt = as.numeric(unlist(ttsf_em)) %>% replace_na(0)
+Embarked = as.numeric(unlist(ttsf_em)) %>% replace_na(0)
 
 #dummyVars transformation
 dmy = dummyVars("~.", data = tt_ttsf)
@@ -78,14 +152,52 @@ ttsf_d = data.frame(predict(dmy, newdata = tt_ttsf)) %>%
 
 
 sum(is.na(ttsf_d$Age))
-ttsf_n = cbind(ttsf_d, sex_tt, Embarked_tt)
-
-##modelling the training dataset
-class_rm = randomForest(trsf_n[,-1], trsf_n$Survived, ntree = 100)##var explained: 45.06%
-
-#put up an array for survival rate
-ttsf_n %>% mutate(Survived = paste0(0), .before = Pclass)
+test_x = cbind(ttsf_d, sex_tt, Embarked)
 
 ###XGBOOST
 library(xgboost)
-set.seed(1000)
+install.packages("gbm")
+library(gbm)
+##train x and y should be matrix
+train_x = subset(trsf_n[, -1]) %>% as.matrix()
+#is.matrix(train_x)
+train_y = trsf_n$Survived %>% as.matrix()
+
+set.seed(100)
+
+#nrounds(learning steps, keep it high): no. of final decision trees
+#eta(keep it low): learning rate is higher -> computation faster
+#min_child_weight: If the tree partition step results in a leaf node with the sum of instance weight less than min_child_weight, then the building process will give up further partitioning.
+#max_depth: Maximum depth of a tree
+#subsample: Setting it to 0.5 means that XGBoost would randomly sample half of the training data prior to growing trees
+#colsample_bytree: the subsample ratio of columns when constructing each tree
+#verbose: If 0, xgboost will stay silent. If 1, it will print information about performance. If 2, some additional information will be printed out
+parameters = list(eta = 0.3,
+                  max_depth = 7,
+                  min_child_weight = 7,
+                  subsample = 0.8, 
+                  colsample_bytree = 0.8,
+                  objective = "binary:logistic",
+                  booster = "gbtree")
+
+model = xgboost(data = train_x, label = train_y, set.seed(100), nrounds = 500, params = parameters, verbose = 0)
+
+##check out the importance of each explanatory variable
+importance = xgb.importance(model=model)
+par(mfrow=c(1,1))
+xgb.plot.importance(importance, top_n = 7, measure = "Gain")
+
+test_x = as.matrix(test_x)
+future = as.data.frame(predict(model, test_x))
+
+for (i in 1:nrow(future)){
+  if(future[i,] < 0.5){
+    future[i,] = 0
+  }
+  else{future[i,] = 1}
+}
+
+future
+
+final = cbind(future,test_x)
+colnames(final)[1] = "Predicted_Survival"
