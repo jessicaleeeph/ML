@@ -203,5 +203,15 @@ for (i in 1:nrow(future)){
 
 future
 
-final = cbind(future,test_x)
-colnames(final)[1] = "Predicted_Survival"
+colnames(future) = "Survived"
+PassengerId=1:418
+future = cbind(PassengerId, future)
+rownames(future) = NULL
+
+##writing result to excel file
+install.packages("xlsx")
+library(rJava)
+library(xlsxjars)
+library(xlsx)
+write.xlsx(future, file = "titanic survival prediciton.xlsx", sheetName = "Titanic", 
+           col.names = TRUE, row.names = FALSE, append = FALSE)
