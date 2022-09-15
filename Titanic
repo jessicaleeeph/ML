@@ -139,19 +139,17 @@ sex_tt = transform(sex_tt, Sex = as.numeric(as.factor(Sex)))
 
 ##Embarked
 Embarked_tt = subset(tt, select = Embarked)
-sapply(tt_embarked, class) #see what data type Embarked is
-sum(is.na(tt_embarked$Embarked)) #2 NA value
-ttsf_em = transform(tt_embarked, Embarked = as.numeric(as.factor(Embarked)))
+sapply(Embarked_tt, class) #see what data type Embarked is
+sum(is.na(Embarked_tt$Embarked)) #2 NA value
+ttsf_em = transform(Embarked_tt, Embarked = as.numeric(as.factor(Embarked)))
 #Replace NAs to 0 (by using replace function, we need to unlist our list first)
 Embarked = as.numeric(unlist(ttsf_em)) %>% replace_na(0)
-
 #dummyVars transformation
 dmy = dummyVars("~.", data = tt_ttsf)
 ttsf_d = data.frame(predict(dmy, newdata = tt_ttsf)) %>% 
   #the direction has to be updown in this case bc last 2 do not have values
   fill(Age, .direction = "updown") %>%
   fill(Fare, .direction = "updown")
-
 
 sum(is.na(ttsf_d$Age))
 test_x = cbind(ttsf_d, sex_tt, Embarked)
