@@ -15,6 +15,7 @@ sapply(sex, class)
 sum(is.na(sex$Sex)) #no NAs in this case
 
 
+
 #Single characters or strings can be converted into numeric values,
 #only if these conversions are possible -> data lost(missing values or NA)
 #tell R Embarked variable is factor
@@ -89,6 +90,7 @@ p_f = ggplot(trsf_d, aes(factor(Survived), Fare)) +
 
 #Add back SEX/Embarked into post-dummyVars
 trsf_n = cbind(trsf_d, sex, Embarked)
+
 
 
 #Visualise the correlation
@@ -184,11 +186,15 @@ model = xgboost(data = train_x, label = train_y, set.seed(100), nrounds = 500, p
 
 ##check out the importance of each explanatory variable
 importance = xgb.importance(model=model)
-par(mfrow=c(1,1))
-xgb.plot.importance(importance, top_n = 7, measure = "Gain")
+
+y= factor(importance$Feature, levels = importance$Feature[order(importance$Gain, decreasing = FALSE)])
+ggplot(importance, aes(x = Gain, y = y)) + geom_bar(stat = "identity", fill="lightblue") + 
+  ggtitle("The importance of each explanatory variable") +
+  xlab("Importance rate") + ylab("Explanatory variable")
 
 test_x = as.matrix(test_x)
 future = as.data.frame(predict(model, test_x))
+#future = ifelse(future > 0.5, 1, 0)
 
 for (i in 1:nrow(future)){
   if(future[i,] < 0.5){
