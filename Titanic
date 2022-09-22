@@ -215,3 +215,39 @@ library(xlsxjars)
 library(xlsx)
 write.xlsx(future, file = "titanic survival prediciton.xlsx", sheetName = "Titanic", 
            col.names = TRUE, row.names = FALSE, append = FALSE)
+
+####adjustment_pred
+#Drop Pclass/Embarked/SibSp/Parch independent variables
+train_x_a = subset(as.data.frame(train_x), select = c("Fare", "Age", "Sex")) %>%
+  as.matrix()
+
+model = xgboost(data = train_x_a, label = train_y, set.seed(100), nrounds = 500,
+                params = parameters, verbose = 0)
+summary(model)
+
+test_x_a = subset(test_x, select = c("Fare", "Age", "Sex")) %>%
+  as.matrix()
+future = as.data.frame(predict(model, test_x_a))
+#future = ifelse(future > 0.5, 1, 0)
+
+for (i in 1:nrow(future)){
+  if(future[i,] < 0.5){
+    future[i,] = 0
+  }
+  else{future[i,] = 1}
+}
+
+future
+
+colnames(future) = "Survived"
+PassengerId=1:418
+future = cbind(PassengerId, future)
+rownames(future) = NULL
+
+##writing result to excel file
+library(rJava)
+library(xlsxjars)
+library(xlsx)
+write.xlsx(future, file = "titanic survival prediciton_1.xlsx", sheetName = "Titanic", 
+           col.names = TRUE, row.names = FALSE, append = FALSE)
+
