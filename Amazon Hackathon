@@ -1,0 +1,222 @@
+##load the packages
+x = c("tidyverse", "dplyr", "ggplot2", "readxl", "stats", "ggcorrplot", "gbm", "tidyr", "caret")
+lapply(x, require, character.only = TRUE)
+
+##import data
+data = read_excel("C:\\Users\\Jessica\\Desktop\\Columbia_Hackathon_Data_Dogfood.xlsx")
+
+##check if the data has na value
+sum(is.na(data))
+
+##separate independent and dependent variables
+data_x = data[, which(names(data) %in% c("ad_exp", "product_brand", "price",
+                                          "gender",
+                                          "marital",
+                                          "education",
+                                          "income",
+                                          "age",
+                                          "prime"))]
+
+data_y = subset(data, select = sns)
+
+###transform the categorical data to digit-wise
+install.packages("CatEncoders")
+library(CatEncoders)
+#transform 
+install.packages("magrittr")
+library(magrittr)
+#ad_exp
+labs = LabelEncoder.fit(data_x$ad_exp)
+ad_exp = transform(labs, data_x$ad_exp) %>%
+  as.data.frame()
+
+#product_brand
+labs = LabelEncoder.fit(data_x$product_brand)
+product_brand = transform(labs, data_x$product_brand) %>%
+  as.data.frame()
+
+#gender
+labs = LabelEncoder.fit(data_x$gender)
+gender = transform(labs, data_x$gender) %>%
+  as.data.frame()
+
+#marital
+labs = LabelEncoder.fit(data_x$marital)
+marital = transform(labs, data_x$marital) %>%
+  as.data.frame()
+
+#education
+labs = LabelEncoder.fit(data_x$education)
+education = transform(labs, data_x$education) %>%
+  as.data.frame()
+
+#income
+labs = LabelEncoder.fit(data_x$income)
+income = transform(labs, data_x$income) %>%
+  as.data.frame()
+
+#age
+labs = LabelEncoder.fit(data_x$age)
+age = transform(labs, data_x$age) %>%
+  as.data.frame()
+
+##combine train_x transformed data
+prime = data$prime
+data_x = cbind(ad_exp,
+               product_brand,
+               data_x$price,
+               gender,
+               marital,
+               education,
+               income,
+               age,
+               prime)
+colnames(data_x) = c("ad_exp",
+                     "product_brand",
+                     "price",
+                     "gender",
+                     "marital",
+                     "education",
+                     "income",
+                     "age",
+                     "prime")
+
+##cross validation (separate train and test dataset)
+set.seed(1031)
+split = createDataPartition(y = data_x$ad_exp, p = 0.7, list = F, groups = 200)
+train_x = data_x[split,] %>%
+  as.data.frame()
+train_y = data_y[split,] %>%
+  as.data.frame()
+
+test_x = data_x[-split,] %>%
+  as.data.frame()
+test_y = data_y[-split,] %>%
+  as.data.frame()
+
+##correlation plot
+train = cbind(train_y,train_x)
+colnames(train)= c("sns", "ad_exp",
+                   "product_brand",
+                   "price",
+                   "gender",
+                   "marital",
+                   "education",
+                   "income",
+                   "age",
+                   "prime")
+
+corr = cor(train)
+head(corr[, 1:10])
+ggcorrplot(corr, hc.order = FALSE, type = "lower",
+           outline.col = "white",
+           ggtheme = ggplot2::theme_gray,
+           colors = c("#6D9EC1", "white", "#E46726"),
+           lab = TRUE, title = "Feature Correlation", legend.title = "correlation")
+
+
+####modelling
+##train x and y should be matrix to fit in xgboost model
+train_x = as.matrix(train_x)
+#is.matrix(train_x)
+train_y = as.matrix(train_y)
+
+library(xgboost)
+install.packages("gbm")
+library(gbm)
+
+###run the optimal parameter
+hyper_grid <- expand.grid(eta = c( .05, .1),
+                          max_depth = c( 5, 7),
+                          min_child_weight = c( 3, 5, 7),
+                          subsample = c(.65, .8), 
+                          colsample_bytree = c(.8),
+                          nrounds = 0, 
+                          RMSE = 0) 
+nrow(hyper_grid)
+
+for(i in 1:nrow(hyper_grid)) {
+  params <- list(
+    eta = hyper_grid$eta[i],
+    max_depth = hyper_grid$max_depth[i],
+    min_child_weight = hyper_grid$min_child_weight[i],
+    subsample = hyper_grid$subsample[i],
+    colsample_bytree = hyper_grid$colsample_bytree[i]
+  )
+  set.seed(123)
+  xgb.tune <- xgb.cv(
+    params = params,
+    data = train_x,
+    label = train_y,
+    nrounds = 500, 
+    nfold = 5,
+    objective = "reg:squarederror",  # binary:logistic分類
+    verbose = 0,               
+    early_stopping_rounds = 10 
+  )
+  
+  hyper_grid$nrounds[i] <- which.min(xgb.tune$evaluation_log$test_rmse_mean)
+  hyper_grid$RMSE[i] <- min(xgb.tune$evaluation_log$test_rmse_mean)
+}
+hyper_grid %>% dplyr::arrange(RMSE) %>% head(10)
+
+###run with optimal parameters
+
+parameters = list(eta = 0.05,
+                  max_depth = 7,
+                  min_child_weight = 3,
+                  subsample = 0.8, 
+                  colsample_bytree = 0.8,
+                  objective = "binary:logistic",
+                  booster = "gbtree")
+model = xgboost(data = train_x, label = train_y, set.seed(123), nrounds = 302, params = parameters, verbose = 0)
+
+importance = head(xgb.importance(model=model),5)
+
+
+library(ggplot2)
+y= factor(importance$Feature, levels = importance$Feature[order(importance$Gain, decreasing = FALSE)])
+ggplot(importance, aes(x = Gain, y = y)) + geom_bar(stat = "identity", fill="lightblue") + 
+  ggtitle("The importance of each explanatory variable") +
+  xlab("Importance rate") + ylab("Explanatory variable") +
+  geom_text(aes(label = round(Gain, digits = 2)))
+
+test_x = as.matrix(test_x)
+future = as.data.frame(predict(model, test_x)) %>%
+  round(digits = 2)
+pct = cbind(future, test_x)
+colnames(pct) = c("subscribed or not","ad_exp", "product_brand", "price",
+                 "gender",
+                 "marital",
+                 "education",
+                 "income",
+                 "age",
+                 "prime")
+head(future)
+future = ifelse(future > 0.5, 1, 0) %>%
+  as.data.frame()
+
+##Result metrics
+error_rate = sum(abs(test_y-future))/count(test_y)
+print(error_rate)
+
+##RMSE = 0.1387 from hyper_grid function
+
+install.packages("xlsx")
+library(rJava)
+library(xlsxjars)
+library(xlsx)
+write.xlsx(pct, file = "amz woof3.xlsx", sheetName = "test prediction", 
+           col.names = TRUE, row.names = FALSE, append = FALSE)
+
+table(train$sns)
+
+tr0 = train %>%
+  filter(prime == 0)
+
+table(tr0$sns)
+
+tr1 = train %>%
+  filter(prime == 1)
+
+table(tr1$sns)
