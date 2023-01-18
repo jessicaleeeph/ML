@@ -1,0 +1,260 @@
+import numpy as np
+import matplotlib as plt
+import pandas as pd
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+
+df = pd.read_excel("/content/smoke_detection_iot.xlsx")
+print(df.head())
+
+df.shape
+df.describe()
+##Fire alarm is the dependent variable
+
+##data cleaning check
+df.isnull().sum()
+
+
+##data type check
+df.info()
+
+##dependent variable counts
+df_count = df['Fire Alarm'].value_counts()
+fire_yes = df[df['Fire Alarm'] != 0]
+fire_no = df[df['Fire Alarm'] == 0]
+print(df_count)
+
+## Y in pie charts
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(5,5))
+plt.pie(df_count, labels = ["Fire Yes", "Fire No"], autopct='%.1f%%')
+
+ax.set_title('Fire Alarm', fontsize = 16)
+
+plt.show()
+
+
+##split into train and test
+from sklearn.model_selection import train_test_split
+X = df.drop("Fire Alarm", axis=1).values
+y = df["Fire Alarm"].values
+X.reshape(-1,1)
+print(X.shape, y.shape)
+
+# Split into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+##KNN model test
+# Fit the classifier to the training data
+knn.fit(X_train,y_train)
+
+# Print the accuracy
+neighbors = np.arange(1, 13)
+train_accuracies = {}
+test_accuracies = {}
+
+for neighbor in neighbors:
+  
+	# Set up a KNN Classifier
+	knn = KNeighborsClassifier(n_neighbors=neighbor)
+  
+	# Fit the model
+	knn.fit(X_train, y_train)
+  
+	# Compute accuracy
+	train_accuracies[neighbor] = knn.score(X_train, y_train)
+	test_accuracies[neighbor] = knn.score(X_test, y_test)
+print(neighbors, '\n', train_accuracies, '\n', test_accuracies)
+
+##KNN plot
+plt.title("KNN: Varying Number of Neighbors")
+#training accuracy
+plt.plot(neighbors, list(train_accuracies.values()), label="Training Accuracy")
+#test accuracies
+plt.plot(neighbors, list(test_accuracies.values()), label="Testing Accuracy")
+
+plt.legend()
+plt.xlabel("Number of Neighbors")
+plt.ylabel("Accuracy")
+
+plt.show()
+
+from sklearn.metrics import confusion_matrix, classification_report
+
+knn = KNeighborsClassifier(n_neighbors=1)
+knn.fit(X_train, y_train)
+# Predict the labels of the test data: y_pred
+y_pred = knn.predict(X_test)
+
+# Generate the confusion matrix and classification report
+print(confusion_matrix(y_test, y_pred))
+print(classification_report(y_test, y_pred))
+
+##cross validation+LinearReg
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import KFold, cross_val_score
+
+# Create a KFold object
+kf = KFold(n_splits= 6, shuffle= True, random_state= 5)
+
+reg = LinearRegression()
+
+# Compute 6-fold cross-validation scores
+cv_scores = cross_val_score(reg, X, y, cv=kf)
+print(cv_scores)
+
+# Print the mean
+print(np.mean(cv_scores))
+
+# Print the standard deviation
+print(np.std(cv_scores))
+
+# Print the 95% confidence interval
+print(np.quantile(cv_scores, [0.025, 0.975]))
+
+
+##Linear Reg with mse and rmse
+from sklearn.metrics import mean_squared_error
+reg.fit(X_train, y_train)
+y_pred = reg.predict(X_test)
+print("Predictions: {}, Actual Values: {}".format(y_pred[:2], y_test[:2]))
+
+# Compute R-squared
+r_squared = reg.score(X_test, y_test)
+
+# Compute RMSE
+rmse = mean_squared_error(y_test, y_pred, squared= False)
+
+# Print the metrics
+print("R^2: {}".format(r_squared))
+print("RMSE: {}".format(rmse))
+
+#######PIPELINE and IMPUTER
+##use imputer to impute th missing value with mean and pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import confusion_matrix
+from sklearn.linear_model import Lasso
+
+# Instantiate an imputer
+imputer = SimpleImputer()
+
+# Instantiate a knn model
+knn = KNeighborsClassifier(n_neighbors = 3)
+
+# Build steps for the pipeline
+steps = [("imputer", imputer), 
+         ("knn", knn)]
+
+# Create the pipeline
+pipeline = Pipeline(steps)
+
+# Fit the pipeline to the training data
+pipeline.fit(X_train, y_train)
+
+#Make predictions on the test set
+y_pred = pipeline.predict(X_test)
+
+# Print the confusion matrix
+print(confusion_matrix(y_test, y_pred))
+
+# Import StandardScaler which is used to preprocess the feature variables
+from sklearn.preprocessing import StandardScaler
+
+# Create pipeline steps
+from sklearn.linear_model import LogisticRegression
+
+steps = [("scaler", StandardScaler()),
+         ("lasso", Lasso(alpha=0.5))]
+
+# Instantiate the pipeline
+pipeline = Pipeline(steps)
+pipeline.fit(X_train, y_train)
+
+# Calculate and print R-squared
+print(pipeline.score(X_test, y_test))
+
+# Build the steps
+steps = [("scaler", StandardScaler()),
+         ("logreg", LogisticRegression())]
+pipeline = Pipeline(steps)
+
+# Create the parameter space
+parameters = {"logreg__C": np.linspace(0.001, 1.0, 20)}
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, 
+                      random_state=21)
+
+# Instantiate the grid search object
+from sklearn.model_selection import GridSearchCV
+
+cv = GridSearchCV(pipeline, param_grid=parameters)
+
+# Fit to the training data
+cv.fit(X_train, y_train)
+print(cv.best_score_, "\n", cv.best_params_)
+
+models = {"Linear Regression": LinearRegression(), "Ridge": Ridge(alpha=0.1), "Lasso": Lasso(alpha=0.1)}
+results = []
+
+# Loop through the models' values
+for model in models.values():
+  kf = KFold(n_splits=6, random_state=42, shuffle=True)
+  
+  # Perform cross-validation
+  cv_scores = cross_val_score(model, X_train, y_train, cv=kf)
+  
+  # Append the results
+  results.append(cv_scores)
+
+# Create a box plot of the results
+plt.boxplot(results, labels=models.keys())
+plt.show()
+# Import mean_squared_error
+from sklearn.metrics import mean_squared_error
+
+for name, model in models.items():
+  
+  # Fit the model to the training data
+  model.fit(X_train_scaled, y_train)
+  
+  # Make predictions on the test set
+  y_pred = model.predict(X_test_scaled)
+  
+  # Calculate the test_rmse
+  test_rmse = mean_squared_error(y_test, y_pred, squared=False)
+  print("{} Test Set RMSE: {}".format(name, test_rmse))
+  
+  # Create models dictionary
+models = {"Logistic Regression": LogisticRegression(), "KNN": KNeighborsClassifier(), "Decision Tree Classifier": DecisionTreeClassifier()}
+results = []
+
+# Loop through the models' values
+for model in models.values():
+  
+  # Instantiate a KFold object
+  kf = KFold(n_splits=6, random_state=12, shuffle=True)
+  
+  # Perform cross-validation
+  cv_results = cross_val_score(model, X_train_scaled, y_train, cv=kf)
+  results.append(cv_results)
+plt.boxplot(results, labels=models.keys())
+plt.show()
+
+# Create steps
+steps = [("imp_mean", SimpleImputer()), 
+         ("scaler", StandardScaler()), 
+         ("logreg", LogisticRegression())]
+
+# Set up pipeline
+pipeline = Pipeline(steps)
+params = {"logreg__solver": ["newton-cg", "saga", "lbfgs"],
+         "logreg__C": np.linspace(0.001, 1.0, 10)}
+
+# Create the GridSearchCV object
+tuning = GridSearchCV(pipeline, param_grid=params)
+tuning.fit(X_train, y_train)
+y_pred = tuning.predict(X_test)
+
+# Compute and print performance
+print("Tuned Logistic Regression Parameters: {}, Accuracy: {}".format(tuning.best_params_, tuning.score(X_test, y_test)))
